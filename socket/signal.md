@@ -31,7 +31,8 @@ sigaction의 sa_handler에서 SIG_IGN으로 설정한 뒤에 시그널 핸들러
 
 그런데, 부모 프로세스가 먼저 죽으면? 자식 프로세스는 init process가 대신 리소스를 해제해 준다.
 
-''' cpp
+``` cpp
+
 #include <unistd.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -90,7 +91,7 @@ void sa_handler_chld(int signaum)
         }
     }
 }
-'''
+```
 
 
 
@@ -108,7 +109,7 @@ ctrl + c
 ctrl + c는 SIGINT 인데, 프로세스 그룹에 전파시켜서 그룹내 속한 자식 프로세스까지 한번에 종료시킨다.
 
 
-'''cpp
+``` cpp
 #include <unistd.h>
 #include <stdio.h>
 #include <signal.h>
@@ -193,4 +194,13 @@ int main()
           }
     }
 }
-'''
+```
+
+프로세스 그룹
+
+
+프로세스 그룹이란, fork를 통해서 생성되는 자식 프로세스들을 관리할 수 있도록 만들어진 그룹임.  프롬프트에서 명령을 내리는 경우에, 프로세서는 자시으니 PID와 동일한 PGID(process group id)를 가지는 프로세스 그룹을 생성한다.
+
+→ 그런데 PGID는 어떻게 보는 것인지 모르겠음. /proc/pid/status 에서는 관련 내용을 찾을 수가 없음  
+
+
