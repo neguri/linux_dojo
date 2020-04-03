@@ -36,3 +36,67 @@ POSIX thread는 줄여서 pthread 라고 부름
 
 결국엔 I/O 처리량이 높거나 빈도수가 높으면 멀티 스레드가 성능상에 좋다.
 
+``` cpp
+#include <unistd.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#define NUM_THREADS 5
+#define pr_err printf
+#define pr_out printf
+
+struct thread_arg {
+    pthread_t tid;
+    int idx;
+}*t_arg;
+
+void* start_thread(void*);
+void clean_thread(struct thread_arg*);
+
+int main()
+{
+    int i, ret;
+
+    t_arg = (struct thread_arg*)calloc(NUM_THREADS, sizeof(struct thread_arg));
+
+    for(i = 0; i<NUM_THREADS; i++) {
+        t_arg[i].idx = i;
+       if((ret =  pthread_create(&t_arg[i].tid, NULL, start_thread, (void*)&t_arg[i]))){
+           pr_err("thread_create: %ld\n", t_arg[i].tid);
+           return 0;
+       }
+       pr_out("pthread_crate: tid = %lu\n", t_arg[i].tid);
+    }
+
+    clean_thread(t_arg);
+
+    return 0;
+}
+
+
+void *start_thread(void* arg)
+{
+
+    struct thread_arg *t_arg = (struct thread_arg*) arg;
+    sleep(2);
+    printf("\t Hello I'm pthred(%d) - TID(%lu)\n", t_arg->idx, t_arg->tid);
+    t_arg->idx += 10;
+    pthread_exit(t_arg);
+}
+
+
+void clean_thread(struct thread_arg* t_arg)
+{
+
+    int i; struct thread_arg* t_arg_ret;
+
+    for(i = 0; i<NUM_THREADS; i++, t_arg++){
+    
+        pthread_join(t_arg->tid, (void**)&t_arg_ret);
+        pr_out("pthread_join: %d -%lu\n", t_arg->idx, t_arg->tid);
+    }
+}
+
+```
