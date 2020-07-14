@@ -117,3 +117,112 @@ __vmstat 2` 라고 하면 2초 간격으로 통계를 보여주게 됨)
 
 ### 장치 모니터링
 > `udevadm monitor` 명령을 통해 메시지를 확인할 수 있다. 만약 서브 시스템에 따른 이벤트를 걸러내려면 다음과 같이 하면 된다.  `udevadm monitor --kernel --subsystem-match=scsi` 라고 하면 SCSI 시스템에서 일어나는 변화만 볼 수 있다. 
+
+
+## 사용자 공간 시동 방법
+
+### init 소개
+> 사용자 공간은 (대략) 아래와 같은 순서로 시작된다. 
+> 1. init
+> 2. udevd 와 syslogd 같은 필수적 저-수준 서비스
+> 3. 네트워크 환경 설정
+> 4. 중간-수준과 고-수준 서비스 (크론, 출력등)
+> 5. 로그인 프롬픝, GUI, 기타 고-수준 응용 프로그램
+
+
+> 리눅스 배포판에서 init은 세가지 구현 사항이 있다.
+> 1. `System V init` : 전통적인 순차적 init (system five 라고 읽자)
+> 2. `systemd` : 대부분은 리눅스 시스템에서 사용하고 있다.
+> 3. `Upstart` : 우분투 설치할 때 사용하는 init (이지만 systemd로 옮겨가려고 한다.)
+
+> 오래된 init 시스템의 경우 한번에 하나씩 순차적으로 수행하기 때문에 종속성 문제를 해결하기 쉽지만 성능은 좋지 않은 편이다. 대신 `systemd` 나 `upstart` 는 여러 서비스가 동시적으로 시작되도록 하여 속도를 높히고 있다.  `systemd`는 하위 호환성을 위해서 `runlevel` 을 지원한다.  
+> `who -r` 이란 명령어를 통해서 현재 runlevel과 runlevel 이 설정된 시간을 확인 할 수 있다.  
+> (`/etc/inittab` 파일이 있다면 System V init을 사용하고 있는 것)
+
+### systemd
+> systemd 가 부트 타임에 어떤 동작을 하는지 아래 처럼 확인 할 수 있다.
+> 1. systemd가 설정을 로딩한다.
+> 2. systemd가 부트 목표를 알아낸다. 보통 default.target 이라는 이름이다.
+> 3. systemd가 기본 부트 목표의 모든 종속 요소들, 그 종속 요소들의 종속 요소들을 파악한다.
+> 4. systemd는 종속 요소들과 부트 목표를 활성화 시킨다.
+> 5. 부팅 후에 systemd는 (uvents와 같은) 시스템 이벤트들에 대응하고 추가 요소들을 활성화 시킨다.
+
+> systemd는 단지 프로세스들과 서비스만 가동하는 것이 아니라 파일 시스템을 마운트하고 네트워크 소켓을 모니터링하고 타이머와 그 외 많은 것들을 실행 시킬 수 있다. 이런 기능의 각 형태를 `unit type`라고 부르고 각 구체적 기능을 `unit` 이라고 부른다.
+
+> 1. service units : 유닉스 시스템의 전통적인 서비스 데몬을 제어
+> 2. mount units : 시스템으로의 파일 시스템 연결을 제어한다.
+> 3. target units : 다른 유닛을 제어한다. 일반적으로 유닛을 그룹으로 나눈ㄴ 방법을 사용하여 제어한다.
+
+#### systemd 종속성
+
+> `Requires` : 엄격한 종속성, Requires 종속 유닛과 함께 어떤 유닛을 활성화 할때 systemd는 종속 유닛을 활성화 하려고 시도한다. 종속 유닛이 실패히게 되면 systemd 는 해당 unit을 비활성화 한다.  
+> `Wants`: 오직 활성화를 위한 종속성. 그 종속성 유닛이 실패하더라도 상관하지 않는다.  
+> `Requisite`: 이미 활성화 된 유닛이며, 그 종속 유닛이 활성화 되어 있지 않으면 해당 유닛을 비활성화 한다.  
+> `Conflicts`: 부정적 종속성, Conflict 종속성을 가진 유닛을 활성화 시카면 systemd 는 그 종속 유닛이 활성화된 상태라면 자동으로 그 해당 유닛을 비활성화 시킨다.  
+
+#### 순서
+> `Before` : 현재 유닛은 열거된 유닛 이전에 활성화 되어야 한다. Before=bar.target 이 foo.target 에 있다고 하면 bar.target 보다 foo.target이 먼저 실행된다.   
+> `After` : 현재 유닛은 열거된 유닛 이후에 활성화 된다.   
+
+#### 조건부 종속성
+> `ConditionPathExists=p` 만약 (파일) 경로 p 가 시스템에 존재하면 true.  
+> `ConditionPathIsDirectory=p` 만약 p 가 디렉토리이면 true.  
+> `ConditionFileNotempty=p` 만약 p 가 파일이고 크기가 0 이 아니면 true.
+
+#### systemd 설정
+> systemd 설정 파일은 시스템의 여러곳에 분포하고 있다. 그래서 `systemctl -p UnitPath show` 를 통해서 경로를 확인할 수 있다.   
+> 보통 두개의 경로에 파일들이 들어 있는데 __시스템 유닛 디렉터리 (/usr/lib/systemd/system)__ 와 __시스템 설정 디렉터리 (/etc/systemd/system)__ 에 들어가 있다. 일반적으로 시스템 유닛 디렉터리는 변경하지 않고 시스템 설정 디렉터리에서 지역적으로 변경하도록 한다. 
+
+#### systemd 프로세스 추적과 동기화
+> systemd는 `cgroup` 를 사용하는데  
+> `Type=simple` 서비스 프로세스가 포크되지 않는다.    
+> `Type=forking` 서비스가 포크되고 systemd는 처음 서비스 프로세스가 종료될 것으로 기대한다.   
+> `Type=notify` 서비스가 준비되는 `sd_notify()` 함술ㄹ 통해서 systemd에게 통지한다 .  
+> `Type=dbus` 서비스가 준비되면 D-bus(Desktop Bus)에 자신을 등록한다.
+> `Type=oneshot` 프로세스가 멈출때, 그 프로세스가 완전히 종룧ㄴ다. `ReaminAfterExit=yes`를 통해서 프로세스가 종료되더라도 systemd가 여전히 서비스가 활성화 된것으로 간주한다.
+
+
+### 사용자 관리 파일
+#### /etc/passwd 파일
+> 평문 파일인 /etc/passwd 는 사용자명을 ID와 연결한다. 
+> 대략 아래와 같은데, 각 라인은 한명의 사용자에 대해서 7개의 필드가 나온다.
+```bash
+jaehoc@pgsql>  cat /etc/passwd
+root:x:0:0:root:/root:/usr/bin/zsh
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+jaehoc:x:1000:1000:jaehoc,,,:/home/jaehoc:/usr/bin/zsh
+```
+> 1. 사용자 명
+> 2. 사용자의 암호화된 비밀 번호. passwd 파일에 저장하지 않고 shadow 파일에 저장한다. 보통 사용자들은 shadow 파일을 읽을 권한 이 없다. `x`란 의미는 암호화된 비밀번호가 shadow 파일에 저장되어 있다는 뜻이며 `*` 표시는 사용자가 로그인 할수 없다는 으미이다. `::`처럼 필드가 비어 있으면 로그인 비밀 번호가 필요하지 않다는 의미 이다.
+> 3. 사용자 ID (UID)
+> 4. 그룹 ID (GID). `/etc/group` 파일에서 번호가 붙은 항목들 중 하나여야 한다. 그룹은 파일의 접근 권한을 결정하고 그 외 역할은 거의 없다.
+> 5. 사용자의 실제 이름
+> 6. 사용자의 홈 디렉토리
+> 7. 사용자의 셸
+
+> 사용자를 추가하고자 할때 `/etc/passwd` 를 직접 편집하면 된다. 하지만 직접 편집하는 것 보다는 `adduser` 와 `userdel`을 사용하는 것이 좋다.
+
+#### Groups 활용
+> 유닉스의 groups는 특정 사용자들하고만 파일을 공유하고 그 외 모든 사람들의 접근은 허용하지 않도록 한다. `/etc/group` 파일에서 그룹 ID를 정의한다. 
+ ``` bash
+systemd-coredump:x:999:
+rdma:x:133:
+postgres:x:134:
+tomcat:x:1001:
+docker:x:998:jaehoc
+```
+
+위와 같은 정보들을 볼수 있는데
+> 1. 그룹명
+> 2. 그룹 비밀 번호
+> 3. 그룹 ID : GID 로서 /etc/passwd 안에 들어간다
+> 4. 해당 그룹에 속한 사용자들에 대한 선택 목록
+
+자신이 속한 그룹이 어디인지 확인하고자 한다면
+`groups` 명령을 통해서 사용자가 어느 그룹에 속해 있는지 확인 가능하다.
+
+
+### getty
+> getty 는 터미널에 연결되어 로그인 프롬프트를 나타내는 프로그램이다. getty는 시스템에 가상 터미널에 로그인 할때만 사용하는 것이라 복잡하지 않다. 
